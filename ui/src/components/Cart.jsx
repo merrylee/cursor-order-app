@@ -8,6 +8,7 @@ import {
 export default function Cart({
   items,
   message,
+  ordering,
   onOrder,
 }) {
   const empty = items.length === 0
@@ -36,7 +37,7 @@ export default function Cart({
         <button
           type="button"
           className="btn-primary btn-order"
-          disabled={empty}
+          disabled={empty || ordering}
           onClick={onOrder}
         >
           주문하기

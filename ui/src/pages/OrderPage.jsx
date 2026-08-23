@@ -3,17 +3,20 @@ import { addToCart } from '../cart.js'
 import MenuCard from '../components/MenuCard.jsx'
 import Cart from '../components/Cart.jsx'
 
-export default function OrderPage({ menus, onPlaceOrder }) {
+export default function OrderPage({ menus, loading, onPlaceOrder }) {
   const [cart, setCart] = useState([])
   const [message, setMessage] = useState('')
+  const [ordering, setOrdering] = useState(false)
 
   function handleAdd(menu, selectedOptions) {
     setMessage('')
     setCart((current) => addToCart(current, menu, selectedOptions))
   }
 
-  function handleOrder() {
-    const result = onPlaceOrder(cart)
+  async function handleOrder() {
+    setOrdering(true)
+    const result = await onPlaceOrder(cart)
+    setOrdering(false)
     if (result.ok) {
       setCart([])
     }
@@ -23,7 +26,9 @@ export default function OrderPage({ menus, onPlaceOrder }) {
   return (
     <div className="order-page">
       <div className="menu-list">
-        {menus.length === 0 ? (
+        {loading ? (
+          <p className="placeholder">메뉴를 불러오는 중입니다.</p>
+        ) : menus.length === 0 ? (
           <p className="placeholder">표시할 메뉴가 없습니다.</p>
         ) : (
           <div className="menu-grid">
@@ -33,7 +38,12 @@ export default function OrderPage({ menus, onPlaceOrder }) {
           </div>
         )}
       </div>
-      <Cart items={cart} message={message} onOrder={handleOrder} />
+      <Cart
+        items={cart}
+        message={message}
+        ordering={ordering}
+        onOrder={handleOrder}
+      />
     </div>
   )
 }

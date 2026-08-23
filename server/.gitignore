@@ -27,3 +27,7 @@ Thumbs.db
 .idea
 .vscode/*
 !.vscode/extensions.json
+
+# Data
+*schema.js
+*seed-data.js

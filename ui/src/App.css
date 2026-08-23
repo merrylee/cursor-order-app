@@ -19,6 +19,14 @@
   color: var(--text);
 }
 
+.app-banner {
+  margin: 0;
+  padding: 10px 24px;
+  background: var(--blue-soft);
+  color: var(--blue);
+  border-bottom: 1px solid var(--line);
+}
+
 .header {
   position: sticky;
   top: 0;
