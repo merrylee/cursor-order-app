@@ -38,7 +38,7 @@ export default function MenuCard({ menu, onAdd }) {
                 <input
                   type="checkbox"
                   checked={selectedIds.includes(option.id)}
-                  disabled={menu.soldOut}
+                  disabled={menu.stock <= 0}
                   onChange={() => toggleOption(option.id)}
                 />
                 {option.name} (+{formatWon(option.price)})
@@ -50,10 +50,10 @@ export default function MenuCard({ menu, onAdd }) {
       <button
         type="button"
         className="btn-primary"
-        disabled={menu.soldOut}
+        disabled={menu.stock <= 0}
         onClick={handleAdd}
       >
-        {menu.soldOut ? '품절' : '담기'}
+        {menu.stock <= 0 ? '품절' : '담기'}
       </button>
     </article>
   )

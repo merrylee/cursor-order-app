@@ -24,6 +24,7 @@ export function addToCart(cart, menu, selectedOptions) {
     ...cart,
     {
       key,
+      menuId: menu.id,
       name: menu.name,
       options: selectedOptions,
       unitPrice: menu.price + extra,
