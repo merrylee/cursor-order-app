@@ -193,3 +193,212 @@
 - 메뉴 CRUD (추가·삭제·가격·옵션 편집)
 - 실시간 푸시(웹소켓). 화면을 열거나 조작할 때 조회·갱신하면 된다.
 
+## 6. 백엔드
+
+프런트엔드와 분리해 Node.js Express + PostgreSQL로 개발한다. 인증·결제는 없다. API 기본 경로 예: `http://localhost:3000/api`
+
+### 6.1 데이터 모델
+
+세 개의 테이블을 사용한다.
+
+#### Menus
+커피 메뉴 기본 정보와 재고.
+
+| 컬럼 | 타입 | 설명 |
+| --- | --- | --- |
+| id | SERIAL PK | 메뉴 ID |
+| name | TEXT NOT NULL | 커피 이름. 예: 아메리카노(ICE) |
+| description | TEXT | 짧은 설명 |
+| price | INTEGER NOT NULL | 기본 가격(원) |
+| image_url | TEXT | 이미지 경로 또는 URL |
+| stock | INTEGER NOT NULL DEFAULT 0 | 재고 수량. 0 미만 불가 |
+
+- 주문하기 화면: 이름, 설명, 가격, 이미지, (품절 판단용) 재고
+- 관리자 재고 현황: 이름과 재고 수량
+
+#### Options
+메뉴에 붙는 선택 옵션.
+
+| 컬럼 | 타입 | 설명 |
+| --- | --- | --- |
+| id | SERIAL PK | 옵션 ID |
+| name | TEXT NOT NULL | 옵션 이름. 예: 샷 추가 |
+| price | INTEGER NOT NULL | 옵션 추가 금액(원). 0 가능 |
+| menu_id | INTEGER NOT NULL FK → menus.id | 연결할 메뉴 |
+
+한 메뉴에 옵션이 여러 개일 수 있다. 옵션이 없는 메뉴도 있다.
+
+#### Orders
+접수된 주문.
+
+| 컬럼 | 타입 | 설명 |
+| --- | --- | --- |
+| id | SERIAL PK | 주문 ID |
+| ordered_at | TIMESTAMPTZ NOT NULL | 주문 일시. 저장 시각 |
+| items | JSONB NOT NULL | 주문 내용. 아래 구조 |
+| total_amount | INTEGER NOT NULL | 주문 총 금액(원) |
+| status | TEXT NOT NULL | `received` / `preparing` / `done` |
+
+`status` 화면 표시:
+
+| 값 | 화면 |
+| --- | --- |
+| received | 주문 접수 |
+| preparing | 제조 중 |
+| done | 완료 |
+
+`items` 한 줄 예시:
+
+```json
+{
+  "menuId": 1,
+  "name": "아메리카노(ICE)",
+  "quantity": 1,
+  "options": [{ "id": 1, "name": "샷 추가", "price": 500 }],
+  "amount": 4500
+}
+```
+
+- `amount` = (메뉴 기본 가격 + 선택한 옵션 가격 합) × 수량
+- `total_amount` = 모든 줄 `amount`의 합
+- 주문 시점의 이름·가격을 그대로 저장한다. 이후 메뉴가 바뀌어도 주문 내용은 유지한다.
+
+신규 주문의 `status`는 항상 `received`(주문 접수)이다.
+
+### 6.2 스키마를 쓰는 사용자 흐름
+
+#### a. 메뉴 조회
+주문하기 화면(또는 앱 진입)에서 Menus를 읽어 브라우저에 보여 준다. 각 메뉴의 Options도 함께 내려 체크박스를 그린다. 재고 수량(`stock`)은 관리자 화면 재고 현황에 숫자로 보여 준다. 주문하기 화면에서는 재고가 0이면 품절로만 쓰고, 개수는 강조하지 않는다.
+
+#### b. 장바구니
+사용자가 커피와 옵션을 골라 담는다. 장바구니는 브라우저 메모리에만 둔다. 서버에 저장하지 않는다.
+
+#### c. 주문 저장
+장바구니에서 주문하기를 누르면 주문 정보를 Orders에 저장한다. 주문일시(`ordered_at`)와 주문내용(`items`: 메뉴, 수량, 옵션, 금액)과 총 금액을 담는다. 같은 요청에서 주문한 메뉴 수량만큼 Menus.stock을 줄인다. 재고가 부족하면 주문을 만들지 않고 실패한다.
+
+#### d. 관리자 주문 현황
+Orders를 최신순으로 주문 현황에 보여 준다. 기본 상태는 주문 접수이다. 상태 버튼을 누르면 한 단계만 진행한다.
+
+- 주문 접수(`received`) 클릭 → 제조 중(`preparing`)
+- 제조 중(`preparing`) 클릭 → 완료(`done`)
+- 완료는 더 이상 바꾸지 않는다
+
+관리자 대시보드 숫자는 Orders의 상태별 건수이다.
+
+### 6.3 API 설계
+
+공통: JSON, 실패 시 `{ "error": "메시지" }`
+
+#### 커피 메뉴 목록
+주문하기를 눌러 화면을 열 때 데이터베이스에서 커피 메뉴를 불러온다.
+
+`GET /api/menus`
+
+응답 예:
+
+```json
+[
+  {
+    "id": 1,
+    "name": "아메리카노(ICE)",
+    "description": "얼음과 함께 시원하게 즐기는 아메리카노",
+    "price": 4000,
+    "imageUrl": "/menus/americano-ice.png",
+    "stock": 10,
+    "options": [
+      { "id": 1, "name": "샷 추가", "price": 500 },
+      { "id": 2, "name": "시럽 추가", "price": 0 }
+    ]
+  }
+]
+```
+
+관리자 재고 현황도 이 목록의 `stock`을 사용한다.
+
+#### 주문 생성
+사용자가 커피를 고른 뒤 주문하기를 누르면 주문 정보를 저장하고, 그에 맞춰 메뉴 재고를 수정한다.
+
+`POST /api/orders`
+
+요청 예:
+
+```json
+{
+  "items": [
+    {
+      "menuId": 1,
+      "quantity": 1,
+      "optionIds": [1]
+    },
+    {
+      "menuId": 2,
+      "quantity": 2,
+      "optionIds": []
+    }
+  ]
+}
+```
+
+서버 처리:
+
+1. 메뉴·옵션이 존재하는지 확인한다. 옵션은 해당 메뉴에 속해야 한다.
+2. 메뉴별로 수량을 합쳐 재고와 비교한다. 부족하면 400으로 거절하고 DB는 바꾸지 않는다.
+3. 줄 금액과 총 금액을 서버에서 계산한다. 클라이언트가 보낸 금액은 쓰지 않는다.
+4. Orders에 `ordered_at`(현재 시각), `items`, `total_amount`, `status: "received"`를 저장한다.
+5. 주문 수량만큼 Menus.stock을 줄인다.
+6. 생성한 주문을 201로 반환한다.
+
+#### 주문 단건 조회
+주문 ID를 전달하면 해당 주문 정보를 보여 준다.
+
+`GET /api/orders/:id`
+
+없으면 404.
+
+응답 예:
+
+```json
+{
+  "id": 12,
+  "orderedAt": "2026-07-31T13:00:00.000Z",
+  "status": "received",
+  "totalAmount": 12500,
+  "items": [
+    {
+      "menuId": 1,
+      "name": "아메리카노(ICE)",
+      "quantity": 1,
+      "options": [{ "id": 1, "name": "샷 추가", "price": 500 }],
+      "amount": 4500
+    }
+  ]
+}
+```
+
+#### 주문 목록 조회
+관리자 주문 현황용. 최신순.
+
+`GET /api/orders`
+
+#### 주문 상태 변경
+주문 접수 → 제조 중 → 완료. 한 단계만 진행한다. 완료이거나 잘못된 전이면 400.
+
+`PATCH /api/orders/:id/status`
+
+요청 예: `{ "status": "preparing" }`
+
+#### 재고 수정
+관리자 재고 현황의 + / −. 수량은 0 미만이 될 수 없다.
+
+`PATCH /api/menus/:id/stock`
+
+요청 예: `{ "stock": 11 }` 또는 `{ "delta": 1 }`
+
+둘 중 하나를 지원하면 된다. 없는 메뉴는 404.
+
+### 6.4 포함하지 않는 것
+- 로그인, 권한, 결제
+- 장바구니 서버 저장
+- 메뉴·옵션 추가/삭제 API (초기 데이터는 DB 시드로 넣는다)
+- 주문 취소·상태 되돌리기
+
